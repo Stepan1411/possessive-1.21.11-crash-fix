@@ -2,8 +2,14 @@ package net.just_s.camera;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mrbysco.armorposer.Reference;
+import com.mrbysco.armorposer.client.gui.ArmorStandScreen;
+import com.mrbysco.armorposer.client.gui.widgets.ToggleButton;
 import com.mrbysco.armorposer.data.SyncData;
 import com.mrbysco.armorposer.packets.ArmorStandSyncPayload;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.Tooltip;
+import net.minecraft.client.gui.components.events.GuiEventListener;
+import net.minecraft.client.resources.language.I18n;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.just_s.PossessiveModClient;
 import net.just_s.mixin.client.LocalPlayerAccessor;
@@ -43,6 +49,16 @@ import net.minecraft.world.level.storage.TagValueOutput;
 import org.jetbrains.annotations.Nullable;
 
 public class ArmorStandCamera extends AbstractCamera {
+    private static boolean possessiveScreenOpening = false;
+
+    public static boolean isPossessiveScreenOpening() {
+        return possessiveScreenOpening;
+    }
+
+    public static void setPossessiveScreenOpening(boolean value) {
+        possessiveScreenOpening = value;
+    }
+
     private final ArmorStand possessedArmorStand;
 
     private CompoundTag savedPose;
@@ -379,10 +395,107 @@ public class ArmorStandCamera extends AbstractCamera {
         this.savedPose = pose;
     }
 
+    private static final java.lang.reflect.Method ADD_WIDGET;
+    private static final java.lang.reflect.Method TEXT_FIELD_UPDATED;
+    private static final java.lang.reflect.Field WIDTH_FIELD;
+    private static final java.lang.reflect.Field RENDERABLES_FIELD;
+
+    static {
+        java.lang.reflect.Method addWidget = null;
+        java.lang.reflect.Method textFieldUpdated = null;
+        java.lang.reflect.Field widthField = null;
+        java.lang.reflect.Field renderablesField = null;
+        try {
+            for (var method : Screen.class.getDeclaredMethods()) {
+                if (method.getName().equals("addRenderableWidget") && method.getParameterCount() == 1) {
+                    method.setAccessible(true);
+                    addWidget = method;
+                    break;
+                }
+            }
+            textFieldUpdated = ArmorStandScreen.class.getDeclaredMethod("textFieldUpdated");
+            textFieldUpdated.setAccessible(true);
+            widthField = Screen.class.getDeclaredField("width");
+            widthField.setAccessible(true);
+            renderablesField = Screen.class.getDeclaredField("renderables");
+            renderablesField.setAccessible(true);
+        } catch (Exception ignored) {}
+        ADD_WIDGET = addWidget;
+        TEXT_FIELD_UPDATED = textFieldUpdated;
+        WIDTH_FIELD = widthField;
+        RENDERABLES_FIELD = renderablesField;
+    }
+
+    private static int width(ArmorStandScreen screen) {
+        try {
+            return WIDTH_FIELD.getInt(screen);
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    public static void addPossessiveButtons(ArmorStandScreen screen) {
+        try {
+            var camera = PossessiveModClient.cameraHandler.getCamera();
+            if (!(camera instanceof ArmorStandCamera armorStandCamera)) return;
+
+            int w = width(screen);
+
+            var animateButton = new ToggleButton.Builder(armorStandCamera.shouldAnimateMoving(), (button) -> {
+                ToggleButton toggleButton = (ToggleButton) button;
+                toggleButton.setValue(!toggleButton.getValue());
+                armorStandCamera.setAnimateMoving(toggleButton.getValue());
+                try {
+                    TEXT_FIELD_UPDATED.invoke(screen);
+                } catch (Exception ignored) {}
+            }).bounds(w - 20 - 100, 174, 100, 18).build();
+            animateButton.setTooltip(Tooltip.create(Component.translatable("armorposer.gui.tooltip.animate_button")));
+
+            var syncButton = new Button.Builder(
+                    Component.translatable("armorposer.gui.label.sync_button"),
+                    (button) -> armorStandCamera.syncArmorStandPos()
+            ).bounds(w - 20 - 100, 195, 100, 18).build();
+            syncButton.setTooltip(Tooltip.create(Component.translatable("armorposer.gui.tooltip.sync_button")));
+
+            if (ADD_WIDGET != null) {
+                ADD_WIDGET.invoke(screen, animateButton);
+                ADD_WIDGET.invoke(screen, syncButton);
+            } else if (RENDERABLES_FIELD != null) {
+                @SuppressWarnings("unchecked")
+                var renderables = (java.util.List<Object>) RENDERABLES_FIELD.get(screen);
+                renderables.add(animateButton);
+                renderables.add(syncButton);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    public static void renderPossessiveLabel(ArmorStandScreen screen, GuiGraphics guiGraphics) {
+        try {
+            int w = width(screen);
+            String translatedLabel = I18n.get("armorposer.gui.label.animate_button");
+            var font = Minecraft.getInstance().font;
+            guiGraphics.drawString(
+                    font,
+                    translatedLabel,
+                    w - 20 - 100 - font.width(translatedLabel) - 10,
+                    174 + (10 - 9 / 2),
+                    16777215,
+                    true
+            );
+        } catch (Exception ignored) {}
+    }
+
     @Override
     public Screen onSetScreen(Screen screen) {
         if (screen instanceof InventoryScreen) {
-            return new AnimatableArmorStandScreen(this);
+            try {
+                var constructor = ArmorStandScreen.class.getConstructor(ArmorStand.class, java.util.List.class);
+                ArmorStandScreen armorScreen = constructor.newInstance(getPossessed(), java.util.List.of());
+                possessiveScreenOpening = true;
+                return armorScreen;
+            } catch (Exception e) {
+                return new AnimatableArmorStandScreen(this);
+            }
         }
         return super.onSetScreen(screen);
     }
