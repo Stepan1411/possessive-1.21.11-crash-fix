@@ -398,40 +398,22 @@ public class ArmorStandCamera extends AbstractCamera {
     private static final java.lang.reflect.Method ADD_WIDGET;
     private static final java.lang.reflect.Method TEXT_FIELD_UPDATED;
     private static final java.lang.reflect.Field WIDTH_FIELD;
-    private static final java.lang.reflect.Field RENDERABLES_FIELD;
 
     static {
         java.lang.reflect.Method addWidget = null;
         java.lang.reflect.Method textFieldUpdated = null;
         java.lang.reflect.Field widthField = null;
-        java.lang.reflect.Field renderablesField = null;
         try {
-            for (var method : Screen.class.getDeclaredMethods()) {
-                if (method.getName().equals("addRenderableWidget") && method.getParameterCount() == 1) {
-                    method.setAccessible(true);
-                    addWidget = method;
-                    break;
-                }
-            }
+            addWidget = Screen.class.getDeclaredMethod("addRenderableWidget", GuiEventListener.class);
+            addWidget.setAccessible(true);
             textFieldUpdated = ArmorStandScreen.class.getDeclaredMethod("textFieldUpdated");
             textFieldUpdated.setAccessible(true);
             widthField = Screen.class.getDeclaredField("width");
             widthField.setAccessible(true);
-            renderablesField = Screen.class.getDeclaredField("renderables");
-            renderablesField.setAccessible(true);
         } catch (Exception ignored) {}
         ADD_WIDGET = addWidget;
         TEXT_FIELD_UPDATED = textFieldUpdated;
         WIDTH_FIELD = widthField;
-        RENDERABLES_FIELD = renderablesField;
-    }
-
-    private static int width(ArmorStandScreen screen) {
-        try {
-            return WIDTH_FIELD.getInt(screen);
-        } catch (Exception e) {
-            return 0;
-        }
     }
 
     public static void addPossessiveButtons(ArmorStandScreen screen) {
@@ -439,7 +421,7 @@ public class ArmorStandCamera extends AbstractCamera {
             var camera = PossessiveModClient.cameraHandler.getCamera();
             if (!(camera instanceof ArmorStandCamera armorStandCamera)) return;
 
-            int w = width(screen);
+            int width = WIDTH_FIELD.getInt(screen);
 
             var animateButton = new ToggleButton.Builder(armorStandCamera.shouldAnimateMoving(), (button) -> {
                 ToggleButton toggleButton = (ToggleButton) button;
@@ -448,36 +430,29 @@ public class ArmorStandCamera extends AbstractCamera {
                 try {
                     TEXT_FIELD_UPDATED.invoke(screen);
                 } catch (Exception ignored) {}
-            }).bounds(w - 20 - 100, 174, 100, 18).build();
+            }).bounds(width - 20 - 100, 174, 100, 18).build();
             animateButton.setTooltip(Tooltip.create(Component.translatable("armorposer.gui.tooltip.animate_button")));
 
             var syncButton = new Button.Builder(
                     Component.translatable("armorposer.gui.label.sync_button"),
                     (button) -> armorStandCamera.syncArmorStandPos()
-            ).bounds(w - 20 - 100, 195, 100, 18).build();
+            ).bounds(width - 20 - 100, 195, 100, 18).build();
             syncButton.setTooltip(Tooltip.create(Component.translatable("armorposer.gui.tooltip.sync_button")));
 
-            if (ADD_WIDGET != null) {
-                ADD_WIDGET.invoke(screen, animateButton);
-                ADD_WIDGET.invoke(screen, syncButton);
-            } else if (RENDERABLES_FIELD != null) {
-                @SuppressWarnings("unchecked")
-                var renderables = (java.util.List<Object>) RENDERABLES_FIELD.get(screen);
-                renderables.add(animateButton);
-                renderables.add(syncButton);
-            }
+            ADD_WIDGET.invoke(screen, animateButton);
+            ADD_WIDGET.invoke(screen, syncButton);
         } catch (Exception ignored) {}
     }
 
     public static void renderPossessiveLabel(ArmorStandScreen screen, GuiGraphics guiGraphics) {
         try {
-            int w = width(screen);
+            int width = WIDTH_FIELD.getInt(screen);
             String translatedLabel = I18n.get("armorposer.gui.label.animate_button");
             var font = Minecraft.getInstance().font;
             guiGraphics.drawString(
                     font,
                     translatedLabel,
-                    w - 20 - 100 - font.width(translatedLabel) - 10,
+                    width - 20 - 100 - font.width(translatedLabel) - 10,
                     174 + (10 - 9 / 2),
                     16777215,
                     true
